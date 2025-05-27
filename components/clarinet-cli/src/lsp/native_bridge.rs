@@ -11,6 +11,7 @@ use clarity_lsp::lsp_types::{
 use clarity_lsp::state::EditorState;
 use crossbeam_channel::{Receiver as MultiplexableReceiver, Select, Sender as MultiplexableSender};
 use serde_json::Value;
+use std::fmt::Display;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -80,6 +81,7 @@ pub struct LspNativeBridge {
     notification_tx: Arc<Mutex<MultiplexableSender<LspNotification>>>,
     request_tx: Arc<Mutex<MultiplexableSender<LspRequest>>>,
     response_rx: Arc<Mutex<Receiver<LspResponse>>>,
+    debug_logging: bool,
 }
 
 impl LspNativeBridge {
@@ -94,6 +96,14 @@ impl LspNativeBridge {
             notification_tx: Arc::new(Mutex::new(notification_tx)),
             request_tx: Arc::new(Mutex::new(request_tx)),
             response_rx: Arc::new(Mutex::new(response_rx)),
+            debug_logging: false, // TODO: Make this configurable
+        }
+    }
+
+    #[inline(always)]
+    async fn debug<D: Display>(&self, message: D) {
+        if self.debug_logging {
+            self.client.log_message(MessageType::LOG, message).await;
         }
     }
 }
@@ -101,6 +111,9 @@ impl LspNativeBridge {
 #[async_trait]
 impl LanguageServer for LspNativeBridge {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
+        self.debug(format!("Recieved message `Initialize`: {params:?}"))
+            .await;
+        //panic!("Exiting");
         let _ = match self.request_tx.lock() {
             Ok(tx) => tx.send(LspRequest::Initialize(Box::new(params))),
             Err(_) => return Err(Error::new(ErrorCode::InternalError)),
@@ -114,13 +127,19 @@ impl LanguageServer for LspNativeBridge {
         Err(Error::new(ErrorCode::InternalError))
     }
 
-    async fn initialized(&self, _params: InitializedParams) {}
+    async fn initialized(&self, params: InitializedParams) {
+        self.debug(format!("Recieved message `Initialized`: {params:?}"))
+            .await;
+    }
 
     async fn shutdown(&self) -> Result<()> {
+        self.debug("Recieved message `Shutdown`").await;
         Ok(())
     }
 
-    async fn execute_command(&self, _: ExecuteCommandParams) -> Result<Option<Value>> {
+    async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<Value>> {
+        self.debug(format!("Recieved message `ExecuteCommand`: {params:?}"))
+            .await;
         Ok(None)
     }
 
@@ -143,6 +162,8 @@ impl LanguageServer for LspNativeBridge {
         &self,
         params: GotoDefinitionParams,
     ) -> Result<Option<GotoDefinitionResponse>> {
+        self.debug(format!("Recieved message `GotoDefinition`: {params:?}"))
+            .await;
         let _ = match self.request_tx.lock() {
             Ok(tx) => tx.send(LspRequest::Definition(params)),
             Err(_) => return Ok(None),
@@ -161,6 +182,8 @@ impl LanguageServer for LspNativeBridge {
         &self,
         params: DocumentSymbolParams,
     ) -> Result<Option<DocumentSymbolResponse>> {
+        self.debug(format!("Recieved message `DocumentSymbol`: {params:?}"))
+            .await;
         let _ = match self.request_tx.lock() {
             Ok(tx) => tx.send(LspRequest::DocumentSymbol(params)),
             Err(_) => return Ok(None),
@@ -176,6 +199,8 @@ impl LanguageServer for LspNativeBridge {
     }
 
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        self.debug(format!("Recieved message `Hover`: {params:?}"))
+            .await;
         let _ = match self.request_tx.lock() {
             Ok(tx) => tx.send(LspRequest::Hover(params)),
             Err(_) => return Ok(None),
@@ -191,6 +216,8 @@ impl LanguageServer for LspNativeBridge {
     }
 
     async fn signature_help(&self, params: SignatureHelpParams) -> Result<Option<SignatureHelp>> {
+        self.debug(format!("Recieved message `SignatureHelp`: {params:?}"))
+            .await;
         let _ = match self.request_tx.lock() {
             Ok(tx) => tx.send(LspRequest::SignatureHelp(params)),
             Err(_) => return Ok(None),
@@ -206,6 +233,8 @@ impl LanguageServer for LspNativeBridge {
     }
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        self.debug(format!("Recieved message `Formatting`: {params:?}"))
+            .await;
         let _ = match self.request_tx.lock() {
             Ok(tx) => tx.send(LspRequest::DocumentFormatting(params)),
             Err(_) => return Ok(None),
@@ -224,6 +253,8 @@ impl LanguageServer for LspNativeBridge {
         &self,
         params: DocumentRangeFormattingParams,
     ) -> Result<Option<Vec<TextEdit>>> {
+        self.debug(format!("Recieved message `RangeFormatting`: {params:?}"))
+            .await;
         let _ = match self.request_tx.lock() {
             Ok(tx) => tx.send(LspRequest::DocumentRangeFormatting(params)),
             Err(_) => return Ok(None),
@@ -239,6 +270,8 @@ impl LanguageServer for LspNativeBridge {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        self.debug(format!("Recieved message `DidOpen`: {params:?}"))
+            .await;
         if let Some(contract_location) = utils::get_contract_location(&params.text_document.uri) {
             let _ = match self.notification_tx.lock() {
                 Ok(tx) => tx.send(LspNotification::ContractOpened(contract_location)),
@@ -290,6 +323,8 @@ impl LanguageServer for LspNativeBridge {
     }
 
     async fn did_save(&self, params: DidSaveTextDocumentParams) {
+        self.debug(format!("Recieved message `DidSave`: {params:?}"))
+            .await;
         if let Some(contract_location) = utils::get_contract_location(&params.text_document.uri) {
             let _ = match self.notification_tx.lock() {
                 Ok(tx) => tx.send(LspNotification::ContractSaved(contract_location)),
@@ -333,6 +368,8 @@ impl LanguageServer for LspNativeBridge {
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        self.debug(format!("Recieved message `DidChange`: {params:?}"))
+            .await;
         if let Some(contract_location) = utils::get_contract_location(&params.text_document.uri) {
             if let Ok(tx) = self.notification_tx.lock() {
                 let _ = tx.send(LspNotification::ContractChanged(
@@ -344,6 +381,8 @@ impl LanguageServer for LspNativeBridge {
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
+        self.debug(format!("Recieved message `DidClose`: {params:?}"))
+            .await;
         if let Some(contract_location) = utils::get_contract_location(&params.text_document.uri) {
             if let Ok(tx) = self.notification_tx.lock() {
                 let _ = tx.send(LspNotification::ContractClosed(contract_location));
