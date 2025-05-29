@@ -16,6 +16,7 @@ pub struct InitializationOptions {
     go_to_definition: bool,
     hover: bool,
     signature_help: bool,
+    pub debug_logging: bool,
 }
 
 impl Default for InitializationOptions {
@@ -29,6 +30,7 @@ impl Default for InitializationOptions {
             go_to_definition: true,
             hover: true,
             signature_help: true,
+            debug_logging: false,
         }
     }
 }

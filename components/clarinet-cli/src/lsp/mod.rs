@@ -1,12 +1,12 @@
 mod native_bridge;
 
-use self::native_bridge::LspNativeBridge;
+use self::native_bridge::{LspNativeBridge, NativeBridgeConfig};
 use clarity_lsp::utils;
 use clarity_repl::clarity::vm::diagnostic::{
     Diagnostic as ClarityDiagnostic, Level as ClarityLevel,
 };
 use crossbeam_channel::unbounded;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range};
 use tower_lsp::{LspService, Server};
 
@@ -28,6 +28,8 @@ async fn do_run_lsp() -> Result<(), String> {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
+    let native_bridge_config = Arc::new(Mutex::new(NativeBridgeConfig::default()));
+    let native_bridge_config_clone = native_bridge_config.clone();
     let (notification_tx, notification_rx) = unbounded();
     let (request_tx, request_rx) = unbounded();
     let (response_tx, response_rx) = mpsc::channel();
@@ -36,11 +38,18 @@ async fn do_run_lsp() -> Result<(), String> {
             notification_rx,
             request_rx,
             response_tx,
+            native_bridge_config,
         ));
     });
 
     let (service, socket) = LspService::new(|client| {
-        LspNativeBridge::new(client, notification_tx, request_tx, response_rx)
+        LspNativeBridge::new(
+            client,
+            notification_tx,
+            request_tx,
+            response_rx,
+            native_bridge_config_clone,
+        )
     });
     Server::new(stdin, stdout, socket).serve(service).await;
     Ok(())
@@ -98,6 +107,7 @@ fn test_opening_counter_contract_should_return_fresh_analysis() {
     use crossbeam_channel::unbounded;
     use std::sync::mpsc::channel;
 
+    let native_bridge_config = Arc::new(Mutex::new(NativeBridgeConfig::default()));
     let (notification_tx, notification_rx) = unbounded();
     let (_request_tx, request_rx) = unbounded();
     let (response_tx, response_rx) = channel();
@@ -106,6 +116,7 @@ fn test_opening_counter_contract_should_return_fresh_analysis() {
             notification_rx,
             request_rx,
             response_tx,
+            native_bridge_config,
         ));
     });
 
@@ -151,6 +162,7 @@ fn test_opening_counter_manifest_should_return_fresh_analysis() {
     use crossbeam_channel::unbounded;
     use std::sync::mpsc::channel;
 
+    let native_bridge_config = Arc::new(Mutex::new(NativeBridgeConfig::default()));
     let (notification_tx, notification_rx) = unbounded();
     let (_request_tx, request_rx) = unbounded();
     let (response_tx, response_rx) = channel();
@@ -159,6 +171,7 @@ fn test_opening_counter_manifest_should_return_fresh_analysis() {
             notification_rx,
             request_rx,
             response_tx,
+            native_bridge_config,
         ));
     });
 
@@ -202,6 +215,7 @@ fn test_opening_simple_nft_manifest_should_return_fresh_analysis() {
     use crossbeam_channel::unbounded;
     use std::sync::mpsc::channel;
 
+    let native_bridge_config = Arc::new(Mutex::new(NativeBridgeConfig::default()));
     let (notification_tx, notification_rx) = unbounded();
     let (_request_tx, request_rx) = unbounded();
     let (response_tx, response_rx) = channel();
@@ -210,6 +224,7 @@ fn test_opening_simple_nft_manifest_should_return_fresh_analysis() {
             notification_rx,
             request_rx,
             response_tx,
+            native_bridge_config,
         ));
     });
 

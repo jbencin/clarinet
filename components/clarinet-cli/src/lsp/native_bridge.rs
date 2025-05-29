@@ -13,8 +13,7 @@ use crossbeam_channel::{Receiver as MultiplexableReceiver, Select, Sender as Mul
 use serde_json::Value;
 use std::fmt::Display;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tower_lsp::jsonrpc::{Error, ErrorCode, Result};
 use tower_lsp::lsp_types::{
     CompletionParams, CompletionResponse, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
@@ -29,10 +28,22 @@ pub enum LspResponse {
     Request(LspRequestResponse),
 }
 
+#[derive(Debug, Default)]
+pub struct NativeBridgeConfig {
+    debug_logging: bool,
+}
+
+impl NativeBridgeConfig {
+    pub fn update(&mut self, editor_state: &EditorState) {
+        self.debug_logging = editor_state.settings.debug_logging
+    }
+}
+
 pub async fn start_language_server(
     notification_rx: MultiplexableReceiver<LspNotification>,
     request_rx: MultiplexableReceiver<LspRequest>,
     response_tx: Sender<LspResponse>,
+    native_bridge_config: Arc<Mutex<NativeBridgeConfig>>,
 ) {
     let mut editor_state = EditorStateInput::Owned(EditorState::new());
 
@@ -58,7 +69,19 @@ pub async fn start_language_server(
                 Ok(request) => {
                     let request_result = match request {
                         LspRequest::Initialize(_) => {
-                            process_mutating_request(request, &mut editor_state)
+                            process_mutating_request(request, &mut editor_state).inspect(|_| {
+                                // If `editor_state` may have changed, update native bridge config
+                                match &editor_state {
+                                    EditorStateInput::Owned(s) => {
+                                        native_bridge_config.lock().unwrap().update(s)
+                                    }
+                                    EditorStateInput::RwLock(rwlock) => {
+                                        // We explicitly initialize this as `EditorStateInput::Owned`, so this isn't really necessary
+                                        let s = rwlock.read().unwrap();
+                                        native_bridge_config.lock().unwrap().update(&s)
+                                    }
+                                };
+                            })
                         }
                         _ => process_request(request, &editor_state),
                     };
@@ -81,7 +104,7 @@ pub struct LspNativeBridge {
     notification_tx: Arc<Mutex<MultiplexableSender<LspNotification>>>,
     request_tx: Arc<Mutex<MultiplexableSender<LspRequest>>>,
     response_rx: Arc<Mutex<Receiver<LspResponse>>>,
-    debug_logging: bool,
+    config: Arc<Mutex<NativeBridgeConfig>>,
 }
 
 impl LspNativeBridge {
@@ -90,19 +113,24 @@ impl LspNativeBridge {
         notification_tx: MultiplexableSender<LspNotification>,
         request_tx: MultiplexableSender<LspRequest>,
         response_rx: Receiver<LspResponse>,
+        config: Arc<Mutex<NativeBridgeConfig>>,
     ) -> Self {
         Self {
             client,
             notification_tx: Arc::new(Mutex::new(notification_tx)),
             request_tx: Arc::new(Mutex::new(request_tx)),
             response_rx: Arc::new(Mutex::new(response_rx)),
-            debug_logging: false, // TODO: Make this configurable
+            config,
         }
     }
 
     #[inline(always)]
     async fn debug<D: Display>(&self, message: D) {
-        if self.debug_logging {
+        let logging_enabled = {
+            // Put this in it's own scope to make sure `MutexGuard` is dropped before calling `log_message()`
+            self.config.lock().unwrap().debug_logging
+        };
+        if logging_enabled {
             self.client.log_message(MessageType::LOG, message).await;
         }
     }
@@ -113,7 +141,6 @@ impl LanguageServer for LspNativeBridge {
     async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult> {
         self.debug(format!("Recieved message `Initialize`: {params:?}"))
             .await;
-        //panic!("Exiting");
         let _ = match self.request_tx.lock() {
             Ok(tx) => tx.send(LspRequest::Initialize(Box::new(params))),
             Err(_) => return Err(Error::new(ErrorCode::InternalError)),
