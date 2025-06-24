@@ -1335,8 +1335,7 @@ mod tests {
         };
         assert_eq!(
             res.result,
-            Value::some(Value::string_ascii_from_bytes("stack".as_bytes().to_vec()).unwrap())
-                .unwrap()
+            Value::some(Value::string_ascii_from_bytes(b"stack".to_vec()).unwrap()).unwrap()
         );
     }
 
