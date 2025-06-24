@@ -535,10 +535,11 @@ impl ClarityInterpreter {
             err
         })?;
 
-        let mut cost = None;
-        if cost_track {
-            cost = Some(CostSynthesis::from_cost_tracker(&global_context.cost_track));
-        }
+        let cost = if cost_track {
+            Some(CostSynthesis::from_cost_tracker(&global_context.cost_track))
+        } else {
+            None
+        };
 
         let mut emitted_events = global_context
             .event_batches
@@ -752,10 +753,11 @@ impl ClarityInterpreter {
             err
         })?;
 
-        let mut cost = None;
-        if cost_track {
-            cost = Some(CostSynthesis::from_cost_tracker(&global_context.cost_track));
-        }
+        let cost = if cost_track {
+            Some(CostSynthesis::from_cost_tracker(&global_context.cost_track))
+        } else {
+            None
+        };
 
         let mut emitted_events = global_context
             .event_batches
@@ -903,10 +905,11 @@ impl ClarityInterpreter {
             err
         })?;
 
-        let mut cost = None;
-        if track_costs {
-            cost = Some(CostSynthesis::from_cost_tracker(&global_context.cost_track));
-        }
+        let cost = if track_costs {
+            Some(CostSynthesis::from_cost_tracker(&global_context.cost_track))
+        } else {
+            None
+        };
 
         let mut emitted_events = global_context
             .event_batches
