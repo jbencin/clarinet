@@ -9,7 +9,7 @@ use clarity::vm::SymbolicExpression;
 
 use crate::analysis::annotation::{Annotation, AnnotationKind, WarningKind};
 use crate::analysis::ast_visitor::{traverse, ASTVisitor};
-use crate::analysis::{self, AnalysisPass, AnalysisResult};
+use crate::analysis::{self, AnalysisPass, AnalysisResult, Lint};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json_schema", derive(JsonSchema))]
@@ -152,21 +152,21 @@ impl AnalysisPass for NoopChecker<'_> {
         annotations: &Vec<Annotation>,
         settings: &analysis::Settings,
     ) -> AnalysisResult {
-        settings
-            .linter
-            .noop
-            .as_ref()
-            .map(|level| {
-                let settings = NoopCheckerSettings::new(level.clone());
-                let checker = NoopChecker::new(annotations, settings);
-                checker.run(contract_analysis)
-            })
-            .unwrap_or_else(|| Ok(vec![]))
+        let level = settings
+            .lints
+            .get(&Lint::Noop)
+            .cloned()
+            .unwrap_or(Level::Warning);
+        let settings = NoopCheckerSettings::new(level);
+        let checker = NoopChecker::new(annotations, settings);
+        checker.run(contract_analysis)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use clarity::vm::diagnostic::Level;
+
     use crate::analysis::Lint;
     use crate::repl::session::Session;
     use crate::repl::SessionSettings;
@@ -174,7 +174,10 @@ mod tests {
     #[test]
     fn single_operand_equals() {
         let mut settings = SessionSettings::default();
-        settings.repl_settings.analysis.lints = vec![Lint::Noop];
+        settings
+            .repl_settings
+            .analysis
+            .enable_lint(Lint::Noop, Level::Warning);
         let mut session = Session::new(settings);
         let snippet = "
 (define-public (test-func)
@@ -198,7 +201,10 @@ mod tests {
     #[test]
     fn single_operand_add() {
         let mut settings = SessionSettings::default();
-        settings.repl_settings.analysis.lints = vec![Lint::Noop];
+        settings
+            .repl_settings
+            .analysis
+            .enable_lint(Lint::Noop, Level::Warning);
         let mut session = Session::new(settings);
         let snippet = "
 (define-public (test-func)
@@ -222,7 +228,10 @@ mod tests {
     #[test]
     fn single_operand_logical() {
         let mut settings = SessionSettings::default();
-        settings.repl_settings.analysis.lints = vec![Lint::Noop];
+        settings
+            .repl_settings
+            .analysis
+            .enable_lint(Lint::Noop, Level::Warning);
         let mut session = Session::new(settings);
         let snippet = "
 (define-public (test-func)
@@ -246,7 +255,10 @@ mod tests {
     #[test]
     fn allow_noop_annotation() {
         let mut settings = SessionSettings::default();
-        settings.repl_settings.analysis.lints = vec![Lint::Noop];
+        settings
+            .repl_settings
+            .analysis
+            .enable_lint(Lint::Noop, Level::Warning);
         let mut session = Session::new(settings);
         let snippet = "
 (define-public (test-func)
